@@ -6,7 +6,8 @@ using VariableValueMonitor.Events;
 using VariableValueMonitor.Variables;
 
 namespace VariableValueMonitor.Monitor;
-public class ValueMonitor
+
+public class ValueMonitor : IValueMonitor
 {
     private readonly ConcurrentDictionary<string, VariableRegistration> _variables = new();
     private readonly ConcurrentDictionary<string, List<MonitorCondition>> _conditions = new();
@@ -14,18 +15,13 @@ public class ValueMonitor
     private readonly ConcurrentDictionary<string, ActiveAlarm> _alarmStates = new();
     private readonly ConcurrentDictionary<string, object> _lastValues = new();
 
+    /// <inheritdoc cref="IValueMonitor.AlarmTriggered"/>
     public event EventHandler<AlarmEventArgs>? AlarmTriggered;
+
+    /// <inheritdoc cref="IValueMonitor.AlarmCleared"/>
     public event EventHandler<AlarmEventArgs>? AlarmCleared;
 
-    /// <summary>
-    /// Register a variable for monitoring using <see cref="ThresholdCondition"/>s.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
-    /// <param name="id">Unique id of the variable to be monitored.</param>
-    /// <param name="name">Name of the variable to be monitored.</param>
-    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
-    /// <param name="thresholds"><see cref="ThresholdCondition"/>s to be monitored.</param>
-    /// <exception cref="ArgumentException"></exception>
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, ThresholdCondition[]?)"/>
     public void RegisterVariable<T>(string id, string name, T initialValue, params ThresholdCondition[] thresholds)
         where T : IComparable<T>
     {
@@ -55,15 +51,7 @@ public class ValueMonitor
         _activeAlarms[id] = [];
     }
 
-    /// <summary>
-    /// Register a variable for monitoring using <see cref="PredicateCondition{T}"/>s.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
-    /// <param name="id">Unique id of the variable to be monitored.</param>
-    /// <param name="name">Name of the variable to be monitored.</param>
-    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
-    /// <param name="predicates"><see cref="PredicateCondition{T}"/>s to be monitored.</param>
-    /// <exception cref="ArgumentNullException"></exception>
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, PredicateCondition{T}[]?)"/>
     public void RegisterVariable<T>(string id, string name, T initialValue, params PredicateCondition<T>[] predicates)
     {
         ArgumentNullException.ThrowIfNull(initialValue, nameof(initialValue));
@@ -82,15 +70,7 @@ public class ValueMonitor
         _activeAlarms[id] = [];
     }
 
-    /// <summary>
-    /// Registers a variable for monitoring using <see cref="ValueChangeCondition{T}"/>s.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
-    /// <param name="id">Unique id of the variable to be monitored.</param>
-    /// <param name="name">Name of the variable to be monitored.</param>
-    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
-    /// <param name="changeConditions"><see cref="ValueChangeCondition{T}"/>s to be monitored.</param>
-    /// <exception cref="ArgumentNullException"></exception>
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, ValueChangeCondition{T}[]?)"/>
     public void RegisterVariable<T>(string id, string name, T initialValue, params ValueChangeCondition<T>[] changeConditions)
     {
         ArgumentNullException.ThrowIfNull(initialValue, nameof(initialValue));
@@ -118,17 +98,7 @@ public class ValueMonitor
         _activeAlarms[id] = [];
     }
 
-    /// <summary>
-    /// Registers a variable for monitoring using mixed conditions.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
-    /// <param name="id">Unique id of the variable to be monitored.</param>
-    /// <param name="name">Name of the variable to be monitored.</param>
-    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
-    /// <param name="thresholds"><see cref="ThresholdCondition"/>s to be monitored.</param>
-    /// <param name="predicates"><see cref="PredicateCondition{T}"/>s to be monitored.</param>
-    /// <param name="changeConditions"><see cref="ValueChangeCondition{T}"/>s to be monitored.</param>
-    /// <exception cref="ArgumentException"></exception>
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, ThresholdCondition[]?, PredicateCondition{T}[]?, ValueChangeCondition{T}[]?)"/>
     public void RegisterVariable<T>(string id, string name, T initialValue,
         ThresholdCondition[]? thresholds = null,
         PredicateCondition<T>[]? predicates = null,
@@ -200,14 +170,7 @@ public class ValueMonitor
         _activeAlarms[id] = [];
     }
 
-    /// <summary>
-    /// Notify the monitor that a variable's value changed, triggers the condition checks.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the monitored variable.</typeparam>
-    /// <param name="variableId">Unique id of the monitored variable.</param>
-    /// <param name="newValue">New value of the monitored variable.</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="ArgumentNullException"></exception>
+    /// <inheritdoc cref="IValueMonitor.NotifyValueChanged{T}(string, T)"/>
     public void NotifyValueChanged<T>(string variableId, T newValue)
     {
         ArgumentNullException.ThrowIfNull(newValue, nameof(newValue));
@@ -225,11 +188,7 @@ public class ValueMonitor
         CheckConditions(variableId, oldValue, newValue);
     }
 
-    /// <summary>
-    /// Notify the monitor that a variable's value changed, triggers the condition checks.
-    /// </summary>
-    /// <param name="args">The <see cref="ValueChangedEventArgs"/></param>
-    /// <exception cref="ArgumentException"></exception>
+    /// <inheritdoc cref=IValueMonitor.NotifyValueChanged(ValueChangedEventArgs)/>
     public void NotifyValueChanged(ValueChangedEventArgs args)
     {
         if (!_variables.TryGetValue(args.VariableId, out VariableRegistration? variable))
@@ -334,24 +293,13 @@ public class ValueMonitor
         }
     }
 
-    /// <summary>
-    /// Get a variable's last saved value.
-    /// </summary>
-    /// <typeparam name="T"><see cref="Type"/> of the variable.</typeparam>
-    /// <param name="variableId">The variable's unique id.</param>
-    /// <returns>The last saved value of the monitored variable of type <typeparamref name="T"/></returns>
+    /// <inheritdoc cref=IValueMonitor.GetCurrentValue{T}(string)/>
     public T? GetCurrentValue<T>(string variableId)
     {
         return _lastValues.TryGetValue(variableId, out var value) && value is T typedValue ? typedValue : default;
     }
 
-    /// <summary>
-    /// Acknowledge an alarm.
-    /// </summary>
-    /// <param name="variableId">The variable's unique id.</param>
-    /// <param name="alarmType"><see cref="AlarmType"/> of the alarm.</param>
-    /// <param name="direction"><see cref="AlarmDirection"/> of the alarm.</param>
-    /// <param name="conditionIndex">The condition index.</param>
+    /// <inheritdoc cref=IValueMonitor.AcknowledgeAlarm(string, AlarmType, AlarmDirection, int)/>
     public void AcknowledgeAlarm(string variableId, AlarmType alarmType, AlarmDirection direction, int conditionIndex = 0)
     {
         if (!_activeAlarms.TryGetValue(variableId, out var activeAlarms))
@@ -362,10 +310,7 @@ public class ValueMonitor
         _alarmStates.TryRemove(alarmKey + "_" + variableId, out _);
     }
 
-    /// <summary>
-    /// Acknowledge all alarms of a variable.
-    /// </summary>
-    /// <param name="variableId">The variable's unique id.</param>
+    /// <inheritdoc cref=IValueMonitor.AcknowledgeAllAlarms(string)/>
     public void AcknowledgeAllAlarms(string variableId)
     {
         if (_activeAlarms.TryGetValue(variableId, out var activeAlarms))
@@ -386,20 +331,13 @@ public class ValueMonitor
         }
     }
 
-    /// <summary>
-    /// Get all active alarms.
-    /// </summary>
-    /// <returns>A list of <see cref="ActiveAlarm"/> representing all active alarms.</returns>
+    /// <inheritdoc cref=IValueMonitor.GetActiveAlarms()/>
     public List<ActiveAlarm> GetActiveAlarms()
     {
         return [.. _alarmStates.Values];
     }
 
-    /// <summary>
-    /// Get active alarms for one variable.
-    /// </summary>
-    /// <param name="variableId">The variable's unique id.</param>
-    /// <returns>A list of <see cref="ActiveAlarm"/> representing the active alarms of the variable.</returns>
+    /// <inheritdoc cref=IValueMonitor.GetActiveAlarms(string)/>
     public List<ActiveAlarm> GetActiveAlarms(string variableId)
     {
         var result = new List<ActiveAlarm>();
@@ -411,10 +349,7 @@ public class ValueMonitor
         return result;
     }
 
-    /// <summary>
-    /// Unregister a variable from monitoring.
-    /// </summary>
-    /// <param name="variableId">The variable's unique id.</param>
+    /// <inheritdoc cref=IValueMonitor.UnregisterVariable(string)/>
     public void UnregisterVariable(string variableId)
     {
         _variables.TryRemove(variableId, out _);
@@ -435,10 +370,7 @@ public class ValueMonitor
         }
     }
 
-    /// <summary>
-    /// Gets all registered and monitored variables.
-    /// </summary>
-    /// <returns>A list of <see cref="VariableRegistration"/> representing all registered and monitored variables.</returns>
+    /// <inheritdoc cref=IValueMonitor.GetRegisteredVariables/>
     public List<VariableRegistration> GetRegisteredVariables()
     {
         return [.. _variables.Values];
