@@ -6,7 +6,7 @@ A flexible, modern .NET library for monitoring variable values and triggering al
 [![Language](https://img.shields.io/badge/language-C%23-blue.svg)](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![NuGet Version](https://img.shields.io/nuget/v/Your.Package.Name.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/Your.Package.Name/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/your-username/VariableValueMonitor)](https://github.com/your-username/VariableValueMonitor/issues)
+[![GitHub issues](https://img.shields.io/github/issues/philipp2604/VariableValueMonitor)](https://github.com/philipp2604/VariableValueMonitor/issues)
 
 ## ✨ Key Features
 
