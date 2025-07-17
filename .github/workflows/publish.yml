@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: publish
+on:
+  workflow_dispatch: # Allow running the workflow manually from the GitHub UI
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+  NuGetDirectory: ${{ github.workspace}}/nuget
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  create_nuget:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          9.0.x
+      
+    - name: Build VariableValueMonitor
+      run: dotnet build src/VariableValueMonitor/VariableValueMonitor.csproj --configuration Release
+    - name: Pack VariableValueMonitor
+      run: dotnet pack src/VariableValueMonitor/VariableValueMonitor.csproj --configuration Release --output ${{ env.NuGetDirectory }}
+
+    - name: Upload NuGet packages artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget
+        if-no-files-found: error
+        retention-days: 7
+        path: |
+          ${{ env.NuGetDirectory }}/*.nupkg
+          ${{ env.NuGetDirectory }}/*.snupkg
+
+  run_test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          8.0.x
+          9.0.x
+      
+    - name: Build
+      run: dotnet build --configuration Release
+    
+    - name: Test .NET 8
+      run: dotnet test --configuration Release --no-restore --no-build --verbosity normal --framework 'net8.0' --filter "Category!=Integration"
+    
+    - name: Test .NET 9
+      run: dotnet test --configuration Release --no-restore --no-build --verbosity normal --framework 'net9.0' --filter "Category!=Integration"
+
+  deploy:
+    runs-on: windows-latest
+    
+    needs: [ create_nuget, run_test ]
+    
+    if: github.event_name == 'release' && github.event.action == 'published'
+    
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nuget
+          path: ${{ env.NuGetDirectory }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+
+      - name: Publish NuGet package
+        run: |
+          foreach($file in (Get-ChildItem "${{ env.NuGetDirectory }}" -Recurse -Include *.nupkg)) {
+              dotnet nuget push $file --skip-duplicate --api-key "${{ secrets.NUGET_APIKEY }}" --source https://api.nuget.org/v3/index.json 
+          }
