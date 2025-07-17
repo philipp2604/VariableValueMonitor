@@ -1,7 +1,8 @@
 ﻿# VariableValueMonitor 🚨
 A flexible, modern .NET library for monitoring variable values and triggering alarms based on a rich set of configurable conditions. It's designed to be a lightweight, type-safe, and thread-safe core for any application that needs to react to state changes, such as in industrial automation, IoT, or system monitoring.
 
-[![.NET Build & Test](https://github.com/your-username/VariableValueMonitor/actions/workflows/dotnet.yml/badge.svg)](https://github.com/your-username/VariableValueMonitor/actions/workflows/dotnet.yml)
+[![.NET 8 (LTS) Build & Test](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-8-build-and-test.yml/badge.svg)](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-8-build-and-test.yml)
+[![.NET 9 (Latest) Build & Test](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml/badge.svg)](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml)
 [![Language](https://img.shields.io/badge/language-C%23-blue.svg)](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![NuGet Version](https://img.shields.io/nuget/v/Your.Package.Name.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/Your.Package.Name/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
