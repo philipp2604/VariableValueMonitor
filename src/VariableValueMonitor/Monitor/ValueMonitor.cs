@@ -4,16 +4,25 @@ using VariableValueMonitor.Alarms.Conditions;
 using VariableValueMonitor.Enums;
 using VariableValueMonitor.Events;
 using VariableValueMonitor.Variables;
+using VariableValueMonitor.Timing;
 
 namespace VariableValueMonitor.Monitor;
 
-public class ValueMonitor : IValueMonitor
+/// <summary>
+/// Creates a new instance of <see cref="ValueMonitor"/>, defining an internal monitor for variables.
+/// </summary>
+/// <param name="timerProvider">A <see cref="ITimerProvider"/> for creating Timers.</param>
+public class ValueMonitor(ITimerProvider timerProvider) : IValueMonitor
 {
     private readonly ConcurrentDictionary<string, VariableRegistration> _variables = new();
     private readonly ConcurrentDictionary<string, List<MonitorCondition>> _conditions = new();
     private readonly ConcurrentDictionary<string, HashSet<string>> _activeAlarms = new();
     private readonly ConcurrentDictionary<string, ActiveAlarm> _alarmStates = new();
     private readonly ConcurrentDictionary<string, object> _lastValues = new();
+    private readonly ConcurrentDictionary<string, ConditionTimer> _conditionTimers = new();
+    private readonly ITimerProvider _timerProvider = timerProvider ?? throw new ArgumentNullException(nameof(timerProvider));
+
+    public ValueMonitor() : this(new TimerProvider()) { }
 
     /// <inheritdoc cref="IValueMonitor.AlarmTriggered"/>
     public event EventHandler<AlarmEventArgs>? AlarmTriggered;
@@ -223,71 +232,50 @@ public class ValueMonitor : IValueMonitor
         {
             var condition = conditions[i];
             var alarmKey = $"{condition.Direction}_{condition.AlarmType}_{i}";
+            var timerKey = $"{variableId}_{condition.Direction}_{condition.AlarmType}_{i}";
 
-            bool shouldTrigger = false;
+            bool conditionMet = false;
 
             // Check according to condition type
             if (condition.ChangeCondition != null)
             {
                 ArgumentNullException.ThrowIfNull(oldValue, nameof(oldValue));
-                shouldTrigger = condition.ChangeCondition(oldValue, newValue);
+                conditionMet = condition.ChangeCondition(oldValue, newValue);
             }
             else if (condition.Condition != null)
             {
-                shouldTrigger = condition.Condition(newValue);
+                conditionMet = condition.Condition(newValue);
             }
 
-            if (shouldTrigger && !activeAlarms.Contains(alarmKey))
+            // Handle hysteresis conditions
+            if (condition.IsHysteresis)
             {
-                // Fire alarm
-                activeAlarms.Add(alarmKey);
-                var activeAlarm = new ActiveAlarm
-                (
-                    variableId,
-                    condition.AlarmType,
-                    condition.Direction,
-                    condition.Message,
-                    DateTime.Now,
-                    newValue,
-                    oldValue,
-                    condition.ThresholdValue
-                );
-                _alarmStates[alarmKey + "_" + variableId] = activeAlarm;
-
-                AlarmTriggered?.Invoke(this, new AlarmEventArgs
-                (
-                    variableId,
-                    variable.Name,
-                    condition.AlarmType,
-                    condition.Direction,
-                    newValue,
-                    oldValue,
-                    condition.ThresholdValue,
-                    condition.Message,
-                    DateTime.Now,
-                    true
-                ));
+                conditionMet = HandleHysteresisCondition(condition, newValue, conditionMet);
             }
-            else if (!shouldTrigger && activeAlarms.Contains(alarmKey))
+
+            // Handle delayed conditions
+            if (condition.IsDelayed)
             {
-                // Deactivate alarm
-                activeAlarms.Remove(alarmKey);
-                var stateKey = alarmKey + "_" + variableId;
-                if (_alarmStates.TryGetValue(stateKey, out var alarm))
+                if (_conditionTimers.TryGetValue(timerKey, out var timer))
                 {
-                    AlarmCleared?.Invoke(this, new AlarmEventArgs
-                    (
-                        variableId,
-                        variable.Name,
-                        condition.AlarmType,
-                        condition.Direction,
-                        newValue,
-                        oldValue,
-                        condition.ThresholdValue,
-                        condition.Message,
-                        DateTime.Now,
-                        false
-                    ));
+                    timer.OnConditionChanged(conditionMet);
+                    // For delayed conditions, don't trigger immediately
+                    continue;
+                }
+            }
+
+            // Handle immediate alarm triggering/clearing for non-delayed conditions
+            if (!condition.IsDelayed)
+            {
+                if (conditionMet && !activeAlarms.Contains(alarmKey))
+                {
+                    // Fire alarm immediately
+                    TriggerAlarmImmediate(variableId, variable, condition, alarmKey, newValue, oldValue);
+                }
+                else if (!conditionMet && activeAlarms.Contains(alarmKey))
+                {
+                    // Clear alarm immediately
+                    ClearAlarmImmediate(variableId, variable, condition, alarmKey, newValue, oldValue);
                 }
             }
         }
@@ -357,16 +345,33 @@ public class ValueMonitor : IValueMonitor
         _activeAlarms.TryRemove(variableId, out _);
         _lastValues.TryRemove(variableId, out _);
 
-        var keysToRemove = new List<string>();
+        // Clean up alarm states
+        var alarmStateKeysToRemove = new List<string>();
         foreach (var key in _alarmStates.Keys)
         {
             if (key.EndsWith("_" + variableId))
-                keysToRemove.Add(key);
+                alarmStateKeysToRemove.Add(key);
         }
 
-        foreach (var key in keysToRemove)
+        foreach (var key in alarmStateKeysToRemove)
         {
             _alarmStates.TryRemove(key, out _);
+        }
+
+        // Clean up condition timers
+        var timerKeysToRemove = new List<string>();
+        foreach (var key in _conditionTimers.Keys)
+        {
+            if (key.StartsWith(variableId + "_"))
+                timerKeysToRemove.Add(key);
+        }
+
+        foreach (var key in timerKeysToRemove)
+        {
+            if (_conditionTimers.TryRemove(key, out var timer))
+            {
+                timer.Dispose();
+            }
         }
     }
 
@@ -374,5 +379,241 @@ public class ValueMonitor : IValueMonitor
     public List<VariableRegistration> GetRegisteredVariables()
     {
         return [.. _variables.Values];
+    }
+
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, DelayedCondition{T}[]?)"/>
+    public void RegisterVariable<T>(string id, string name, T initialValue, params DelayedCondition<T>[] delayedConditions)
+        where T : IComparable<T>
+    {
+        var variable = new VariableRegistration(id, name, typeof(T), initialValue);
+        _variables[id] = variable;
+        _lastValues[id] = initialValue;
+
+        var conditions = new List<MonitorCondition>();
+        for (int i = 0; i < delayedConditions.Length; i++)
+        {
+            var delayedCondition = delayedConditions[i];
+            var condition = CreateMonitorConditionFromDelayed(delayedCondition);
+            conditions.Add(condition);
+
+            if (condition.IsDelayed)
+            {
+                var timerKey = $"{id}_{condition.Direction}_{condition.AlarmType}_{i}";
+                var conditionTimer = new ConditionTimer(
+                    _timerProvider,
+                    condition.Delay!.Value,
+                    () => TriggerDelayedAlarm(id, i, condition));
+                _conditionTimers[timerKey] = conditionTimer;
+            }
+        }
+
+        _conditions[id] = conditions;
+        _activeAlarms[id] = [];
+    }
+
+    /// <inheritdoc cref="IValueMonitor.RegisterVariable{T}(string, string, T, HysteresisThresholdCondition[]?)"/>
+    public void RegisterVariable<T>(string id, string name, T initialValue, params HysteresisThresholdCondition[] hysteresisConditions)
+        where T : IComparable<T>
+    {
+        var variable = new VariableRegistration(id, name, typeof(T), initialValue);
+        _variables[id] = variable;
+        _lastValues[id] = initialValue;
+
+        var conditions = new List<MonitorCondition>();
+        foreach (var hysteresisCondition in hysteresisConditions)
+        {
+            if (hysteresisCondition.TriggerThreshold is not T || hysteresisCondition.ClearThreshold is not T)
+                throw new ArgumentException($"Hysteresis thresholds must be of type {typeof(T).Name}");
+
+            var condition = CreateMonitorConditionFromHysteresis<T>(hysteresisCondition);
+            conditions.Add(condition);
+        }
+
+        _conditions[id] = conditions;
+        _activeAlarms[id] = [];
+    }
+
+    private static MonitorCondition CreateMonitorConditionFromDelayed<T>(DelayedCondition<T> delayedCondition)
+        where T : IComparable<T>
+    {
+        var condition = new MonitorCondition(
+            delayedCondition.AlarmType,
+            delayedCondition.Direction,
+            CreateConditionFunc<T>(delayedCondition.InnerCondition),
+            delayedCondition.Message,
+            delayedCondition.ThresholdValue)
+        {
+            Delay = delayedCondition.Delay
+        };
+
+        if (delayedCondition.InnerCondition is ValueChangeCondition<T> changeCondition)
+        {
+            condition.ChangeCondition = (oldValue, newValue) =>
+                oldValue is T typedOld && newValue is T typedNew &&
+                changeCondition.Condition(typedOld, typedNew);
+        }
+
+        return condition;
+    }
+
+    private static MonitorCondition CreateMonitorConditionFromHysteresis<T>(HysteresisThresholdCondition hysteresisCondition)
+        where T : IComparable<T>
+    {
+        var triggerThreshold = (T)hysteresisCondition.TriggerThreshold;
+        var clearThreshold = (T)hysteresisCondition.ClearThreshold;
+
+        Func<object, bool> condition = hysteresisCondition.Direction switch
+        {
+            AlarmDirection.LowerBound => value =>
+                value is T typedValue && typedValue.CompareTo(triggerThreshold) < 0,
+            AlarmDirection.UpperBound => value =>
+                value is T typedValue && typedValue.CompareTo(triggerThreshold) > 0,
+            _ => throw new ArgumentException("Invalid direction for hysteresis threshold")
+        };
+
+        return new MonitorCondition(
+            hysteresisCondition.AlarmType,
+            hysteresisCondition.Direction,
+            condition,
+            hysteresisCondition.Message,
+            hysteresisCondition.TriggerThreshold)
+        {
+            ClearThreshold = hysteresisCondition.ClearThreshold
+        };
+    }
+
+    private static Func<object, bool> CreateConditionFunc<T>(object innerCondition) where T : IComparable<T>
+    {
+        return innerCondition switch
+        {
+            ThresholdCondition thresholdCondition => CreateThresholdFunc<T>(thresholdCondition),
+            PredicateCondition<T> predicateCondition => value =>
+                value is T typedValue && predicateCondition.Condition(typedValue),
+            _ => throw new ArgumentException("Unsupported condition type for delayed conditions")
+        };
+    }
+
+    private static Func<object, bool> CreateThresholdFunc<T>(ThresholdCondition thresholdCondition) where T : IComparable<T>
+    {
+        var typedThreshold = (T)thresholdCondition.ThresholdValue;
+        return thresholdCondition.Direction switch
+        {
+            AlarmDirection.LowerBound => value =>
+                value is T typedValue && typedValue.CompareTo(typedThreshold) < 0,
+            AlarmDirection.UpperBound => value =>
+                value is T typedValue && typedValue.CompareTo(typedThreshold) > 0,
+            _ => throw new ArgumentException("Invalid direction for threshold")
+        };
+    }
+
+    private static bool HandleHysteresisCondition(MonitorCondition condition, object newValue, bool conditionMet)
+    {
+        if (condition.ClearThreshold == null)
+            return conditionMet;
+
+        // For hysteresis, we need different logic for triggering vs clearing
+        if (!condition.HysteresisAlarmActive && conditionMet)
+        {
+            // Alarm not active, condition met -> activate
+            condition.HysteresisAlarmActive = true;
+            return true;
+        }
+        else if (condition.HysteresisAlarmActive)
+        {
+            // Alarm is active, check if we should clear using clear threshold
+            bool shouldClear = CheckClearThreshold(condition, newValue);
+            if (shouldClear)
+            {
+                condition.HysteresisAlarmActive = false;
+                return false;
+            }
+            return true; // Keep alarm active
+        }
+
+        return false;
+    }
+
+    private static bool CheckClearThreshold(MonitorCondition condition, object newValue)
+    {
+        if (condition.ClearThreshold == null || newValue is not IComparable newComparable)
+            return false;
+
+        var clearThreshold = (IComparable)condition.ClearThreshold;
+        var comparison = newComparable.CompareTo(clearThreshold);
+
+        return condition.Direction switch
+        {
+            AlarmDirection.UpperBound => comparison <= 0, // Clear when value drops to or below clear threshold
+            AlarmDirection.LowerBound => comparison >= 0, // Clear when value rises to or above clear threshold
+            _ => false
+        };
+    }
+
+    private void TriggerAlarmImmediate(string variableId, VariableRegistration variable, MonitorCondition condition, string alarmKey, object newValue, object? oldValue)
+    {
+        var activeAlarms = _activeAlarms[variableId];
+        activeAlarms.Add(alarmKey);
+
+        var activeAlarm = new ActiveAlarm(
+            variableId,
+            condition.AlarmType,
+            condition.Direction,
+            condition.Message,
+            DateTime.Now,
+            newValue,
+            oldValue,
+            condition.ThresholdValue
+        );
+        _alarmStates[alarmKey + "_" + variableId] = activeAlarm;
+
+        AlarmTriggered?.Invoke(this, new AlarmEventArgs(
+            variableId,
+            variable.Name,
+            condition.AlarmType,
+            condition.Direction,
+            newValue,
+            oldValue,
+            condition.ThresholdValue,
+            condition.Message,
+            DateTime.Now,
+            true
+        ));
+    }
+
+    private void ClearAlarmImmediate(string variableId, VariableRegistration variable, MonitorCondition condition, string alarmKey, object newValue, object? oldValue)
+    {
+        var activeAlarms = _activeAlarms[variableId];
+        activeAlarms.Remove(alarmKey);
+
+        var stateKey = alarmKey + "_" + variableId;
+        _alarmStates.TryRemove(stateKey, out _);
+
+        AlarmCleared?.Invoke(this, new AlarmEventArgs(
+            variableId,
+            variable.Name,
+            condition.AlarmType,
+            condition.Direction,
+            newValue,
+            oldValue,
+            condition.ThresholdValue,
+            condition.Message,
+            DateTime.Now,
+            false
+        ));
+    }
+
+    private void TriggerDelayedAlarm(string variableId, int conditionIndex, MonitorCondition condition)
+    {
+        if (!_variables.TryGetValue(variableId, out var variable))
+            return;
+
+        var alarmKey = $"{condition.Direction}_{condition.AlarmType}_{conditionIndex}";
+        var activeAlarms = _activeAlarms[variableId];
+
+        if (!activeAlarms.Contains(alarmKey))
+        {
+            var currentValue = _lastValues[variableId];
+            TriggerAlarmImmediate(variableId, variable, condition, alarmKey, currentValue, null);
+        }
     }
 }
