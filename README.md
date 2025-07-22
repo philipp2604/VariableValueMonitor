@@ -10,11 +10,14 @@ A flexible, modern .NET library for monitoring variable values and triggering al
 
 ## ✨ Key Features
 
-- **✅ Flexible Condition Engine**: Define alarms using three powerful, type-safe condition types:
+- **✅ Flexible Condition Engine**: Define alarms using five powerful, type-safe condition types:
   - **Thresholds**: Trigger alarms when a numeric value goes above or below a set point (e.g., `temperature > 80.0`).
   - **Predicates**: Use custom logic (`Predicate<T>`) for complex state validation (e.g., `status == "Error"`, `isEmergencyStop == true`).
   - **Value Changes**: React to the *dynamics* of a variable by comparing its old and new values (e.g., `newValue > oldValue`, `Math.Abs(newValue - oldValue) > 10.0`).
-- **🔧 Fluent Condition Builders**: Use the static `CommonConditions` class for a clean, readable way to create common alarm logic like `OnTrue()`, `OnValueJump()`, `OnStringEquals()`, and more.
+  - **Delayed Conditions**: Wrap any condition to only trigger alarms if the condition remains active for a specified duration (e.g., prevent nuisance alarms from brief spikes).
+  - **Hysteresis Thresholds**: Use separate trigger and clear thresholds to prevent oscillating alarms (e.g., trigger at 85°C, clear at 75°C).
+- **🔧 Fluent Condition Builders**: Use the static `CommonConditions` class for a clean, readable way to create common alarm logic like `OnTrue()`, `OnValueJump()`, `OnStringEquals()`, `WithDelay()`, and `OnHighValueHysteresis()`.
+- **⏰ Time-Based Features**: Advanced timing capabilities including delayed conditions for filtering transient spikes and hysteresis conditions for stable alarm behavior.
 - **🔔 Event-Driven Alarms**: Subscribe to `AlarmTriggered` and `AlarmCleared` events to seamlessly integrate alarm logic into your application's workflow.
 - **🚀 Type-Safe & Generic**: Monitor any `IComparable` or `IEquatable` type, from primitives (`int`, `double`, `bool`) and `enums` to your own custom `record` or `class` types.
 - **🎛️ Stateful Alarm Management**: The monitor tracks the state of all active alarms, preventing duplicate triggers and providing `Acknowledge` functionality.
@@ -25,9 +28,15 @@ A flexible, modern .NET library for monitoring variable values and triggering al
 
 The library is designed with a clear separation of concerns, making it easy to understand and extend.
 
-- **The Monitor (`ValueMonitor`)**: The central engine and public API. It manages variable registrations, state, and orchestrates condition checking and event firing.
-- **Conditions (`ThresholdCondition`, `PredicateCondition`, `ValueChangeCondition`)**: These are the declarative, type-safe "rules" that you define. They are simple data containers for your alarm logic.
-- **Common Conditions (`CommonConditions`)**: A static helper class that acts as a factory for creating the most frequently used `PredicateCondition` and `ValueChangeCondition` instances.
+- **The Monitor (`ValueMonitor`)**: The central engine and public API. It manages variable registrations, state, timing infrastructure, and orchestrates condition checking and event firing.
+- **Conditions**: Five types of declarative, type-safe "rules" that you define:
+  - `ThresholdCondition`: Numeric threshold comparisons
+  - `PredicateCondition`: Custom predicate logic
+  - `ValueChangeCondition`: Old vs new value comparisons
+  - `DelayedCondition<T>`: Wraps any condition with a time delay
+  - `HysteresisThresholdCondition`: Separate trigger and clear thresholds
+- **Common Conditions (`CommonConditions`)**: A static helper class that acts as a factory for creating the most frequently used conditions, including time-based helpers like `WithDelay()` and `OnHighValueHysteresis()`.
+- **Timing Infrastructure (`ITimerProvider`, `TimerProvider`, `ConditionTimer`)**: Manages time-based condition logic with testable abstractions.
 - **Events (`AlarmEventArgs`, `ValueChangedEventArgs`)**: The primary output mechanism. These classes carry all the context about an alarm or value change to your event handlers.
 - **Data Models (`ActiveAlarm`, `VariableRegistration`)**: Internal and public records/classes that represent the state of monitored variables and active alarms.
 
@@ -79,17 +88,34 @@ monitor.RegisterVariable<double>("pressure_sensor_1", "Hydraulic Pressure", 120.
 
 // A machine state monitor using enums
 monitor.RegisterVariable<MachineState>("machine_1", "CNC Machine State", MachineState.Running,
-    CommonConditions.OnEnumEquals(AlarmType.Alarm, MachineState.Error, "Machine has entered an error state!"),
-    CommonConditions.OnEnumChange(AlarmType.Info, MachineState.Running, MachineState.Maintenance, "Machine is now under maintenance.")
-);
+    [CommonConditions.OnEnumEquals(AlarmType.Alarm, MachineState.Error, "Machine has entered an error state!")]);
+monitor.RegisterVariable<MachineState>("machine_1", "CNC Machine State", MachineState.Running,
+    [CommonConditions.OnEnumChange(AlarmType.Info, MachineState.Running, MachineState.Maintenance, "Machine is now under maintenance.")]);
+
+// A delayed condition - only triggers after temperature is high for 30 seconds
+monitor.RegisterVariable<double>("temp_delayed", "Oven Temperature", 60.0,
+    CommonConditions.OnHighValueDelayed(200.0, TimeSpan.FromSeconds(30), "Sustained high temperature detected!"));
+
+// A hysteresis condition - triggers at 85°C, clears at 75°C
+monitor.RegisterVariable<double>("temp_hysteresis", "Reactor Temperature", 70.0,
+    CommonConditions.OnHighValueHysteresis(85.0, 75.0, "Reactor temperature alarm"));
 
 Console.WriteLine("--- Simulating Value Changes ---\n");
 
 // 4. Notify the monitor of new values
 monitor.NotifyValueChanged("temp_sensor_1", 90.0);       // Triggers "High temperature"
-monitor.NotifyValueChanged("pressure_sensor_1", 155.5);    // Triggers "Rapid pressure change"
+monitor.NotifyValueChanged("pressure_sensor_1", 155.5);  // Triggers "Rapid pressure change"
 monitor.NotifyValueChanged("emergency_stop_1", true);    // Triggers "E-Stop activated"
 monitor.NotifyValueChanged("machine_1", MachineState.Error); // Triggers "Error state"
+
+// Demonstrate hysteresis behavior
+monitor.NotifyValueChanged("temp_hysteresis", 90.0);     // Triggers at 85°C threshold
+monitor.NotifyValueChanged("temp_hysteresis", 80.0);     // Stays active (above 75°C clear threshold)
+monitor.NotifyValueChanged("temp_hysteresis", 74.0);     // Clears at 75°C threshold
+
+// Demonstrate delayed condition (would need to wait 30 seconds for actual trigger)
+monitor.NotifyValueChanged("temp_delayed", 220.0);       // Starts delay timer, no immediate alarm
+
 monitor.NotifyValueChanged("temp_sensor_1", 80.0);       // Clears the temperature alarm
 
 Console.WriteLine($"\n--- Final State ---");
@@ -124,9 +150,53 @@ public enum MachineState { Stopped, Running, Maintenance, Error }
 
 ```
 
+## ⏰ Time-Based Features
+
+### Delayed Conditions
+
+Delayed conditions wrap existing conditions and only trigger alarms after the condition has been active for a specified duration. This prevents nuisance alarms from brief spikes or transient conditions.
+
+```csharp
+// Only trigger after temperature exceeds 85°C for 5 seconds
+var delayedCondition = CommonConditions.OnHighValueDelayed(85.0, TimeSpan.FromSeconds(5), "Sustained high temperature");
+monitor.RegisterVariable("temp_sensor", "Temperature", 70.0, delayedCondition);
+
+// You can wrap any condition type with a delay
+var delayedPredicate = CommonConditions.WithDelay(
+    CommonConditions.OnTrue(AlarmType.Alarm, "Emergency stop activated"),
+    TimeSpan.FromSeconds(2));
+monitor.RegisterVariable("e_stop", "Emergency Stop", false, delayedPredicate);
+```
+
+### Hysteresis Thresholds
+
+Hysteresis conditions use separate trigger and clear thresholds to prevent oscillating alarms around a single threshold value.
+
+```csharp
+// Trigger alarm at 85°C, but don't clear until temperature drops to 75°C
+var hysteresisCondition = CommonConditions.OnHighValueHysteresis(85.0, 75.0, "High temperature with hysteresis");
+monitor.RegisterVariable("temp_sensor", "Temperature", 70.0, hysteresisCondition);
+
+// Sequence of events:
+monitor.NotifyValueChanged("temp_sensor", 90.0);  // Alarm triggered (>= 85°C)
+monitor.NotifyValueChanged("temp_sensor", 82.0);  // Alarm stays active (> 75°C clear threshold)
+monitor.NotifyValueChanged("temp_sensor", 74.0);  // Alarm cleared (<= 75°C)
+```
+
+### Custom Timer Provider
+
+For testing or specialized timing needs, you can provide your own timer implementation:
+
+```csharp
+// Use custom timer provider (useful for unit testing)
+var customTimerProvider = new MyCustomTimerProvider();
+var monitor = new ValueMonitor(customTimerProvider);
+```
+
 ## 📖 Documentation
 - **[ValueMonitor API Reference](./src/VariableValueMonitor/Monitor/IValueMonitor.cs)**: The `ValueMonitor` interface is the primary entry point for all operations. Its public methods define the library's capabilities.
-- **[Common Conditions Reference](./src/VariableValueMonitor/Alarms/Conditions/CommonConditions.cs)**: Explore this static class to see the available pre-built condition helpers.
+- **[Common Conditions Reference](./src/VariableValueMonitor/Alarms/Conditions/CommonConditions.cs)**: Explore this static class to see the available pre-built condition helpers, including time-based features.
+- **[Time-Based Conditions](./tests/VariableValueMonitor.Tests/Unit/Monitor/TimeBasedConditionTests.cs)**: Examples and tests for delayed conditions and hysteresis thresholds.
 - **[Unit Tests](./tests/VariableValueMonitor.Tests/Unit/Monitor/ValueMonitorUnitTests.cs)**: The unit tests provide comprehensive, focused examples for every feature and condition type.
 - **[Integration Tests](./tests/VariableValueMonitor.Tests/Integration/Monitor/ValueMonitorIntegrationTests.cs)**: These tests showcase how to handle more complex, multi-alarm scenarios.
 

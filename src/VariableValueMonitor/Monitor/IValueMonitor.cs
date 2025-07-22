@@ -137,4 +137,28 @@ public interface IValueMonitor
     /// </summary>
     /// <returns>A list of <see cref="VariableRegistration"/> representing all registered and monitored variables.</returns>
     public List<VariableRegistration> GetRegisteredVariables();
+
+    /// <summary>
+    /// Register a variable for monitoring using <see cref="DelayedCondition{T}"/>s.
+    /// </summary>
+    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
+    /// <param name="id">Unique id of the variable to be monitored.</param>
+    /// <param name="name">Name of the variable to be monitored.</param>
+    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
+    /// <param name="delayedConditions"><see cref="DelayedCondition{T}"/>s to be monitored.</param>
+    /// <exception cref="ArgumentException"></exception>
+    public void RegisterVariable<T>(string id, string name, T initialValue, params DelayedCondition<T>[] delayedConditions)
+        where T : IComparable<T>;
+
+    /// <summary>
+    /// Register a variable for monitoring using <see cref="HysteresisThresholdCondition"/>s.
+    /// </summary>
+    /// <typeparam name="T"><see cref="Type"/> of the variable to be monitored.</typeparam>
+    /// <param name="id">Unique id of the variable to be monitored.</param>
+    /// <param name="name">Name of the variable to be monitored.</param>
+    /// <param name="initialValue">Initial value of the variable to be monitored.</param>
+    /// <param name="hysteresisConditions"><see cref="HysteresisThresholdCondition"/>s to be monitored.</param>
+    /// <exception cref="ArgumentException"></exception>
+    public void RegisterVariable<T>(string id, string name, T initialValue, params HysteresisThresholdCondition[] hysteresisConditions)
+        where T : IComparable<T>;
 }

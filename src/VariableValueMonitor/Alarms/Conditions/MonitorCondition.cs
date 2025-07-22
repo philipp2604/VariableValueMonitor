@@ -1,4 +1,5 @@
-﻿using VariableValueMonitor.Enums;
+﻿using System;
+using VariableValueMonitor.Enums;
 
 namespace VariableValueMonitor.Alarms.Conditions;
 
@@ -89,4 +90,29 @@ internal class MonitorCondition
     /// Threshold value, defining when the alarm is raised.
     /// </summary>
     public object? ThresholdValue { get; set; }
+
+    /// <summary>
+    /// Delay before triggering alarm (for delayed conditions).
+    /// </summary>
+    public TimeSpan? Delay { get; set; }
+
+    /// <summary>
+    /// Clear threshold for hysteresis conditions.
+    /// </summary>
+    public object? ClearThreshold { get; set; }
+
+    /// <summary>
+    /// Indicates if this is a hysteresis condition.
+    /// </summary>
+    public bool IsHysteresis => ClearThreshold != null;
+
+    /// <summary>
+    /// Indicates if this is a delayed condition.
+    /// </summary>
+    public bool IsDelayed => Delay.HasValue;
+
+    /// <summary>
+    /// For hysteresis conditions, tracks whether alarm is currently active.
+    /// </summary>
+    public bool HysteresisAlarmActive { get; set; }
 }

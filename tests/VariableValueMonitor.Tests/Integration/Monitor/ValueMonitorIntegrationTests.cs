@@ -10,8 +10,8 @@ using VariableValueMonitor.Monitor;
 
 namespace VariableValueMonitor.Tests.Integration.Monitor
 {
-	[Trait("Category", "Integration")]
-	public class VariableValueMonitorIntegrationTests : IDisposable
+    [Trait("Category", "Integration")]
+    public class VariableValueMonitorIntegrationTests : IDisposable
     {
         private readonly ValueMonitor _monitor;
         private readonly List<AlarmEventArgs> _triggeredAlarms;
@@ -91,30 +91,30 @@ namespace VariableValueMonitor.Tests.Integration.Monitor
         }
     }
 
-	#region Helpers
-	public class VariableService
-	{
-		public event EventHandler<ValueChangedEventArgs>? VariableValueChanged;
+    #region Helpers
+    public class VariableService
+    {
+        public event EventHandler<ValueChangedEventArgs>? VariableValueChanged;
 
-		public string PressureName { get; } = "TankPressure";
+        public string PressureName { get; } = "TankPressure";
         public string EmergencyStopName { get; } = "EmergencyStop";
 
-		public double Pressure { get; private set; } = 1013.25;
-		public bool EmergencyStop { get; private set; } = false;
+        public double Pressure { get; private set; } = 1013.25;
+        public bool EmergencyStop { get; private set; } = false;
 
-		public void UpdatePressureValue(double newValue)
-		{
-			var oldValue = Pressure;
+        public void UpdatePressureValue(double newValue)
+        {
+            var oldValue = Pressure;
             Pressure = newValue;
-			VariableValueChanged?.Invoke(this, new ValueChangedEventArgs(PressureName, oldValue, newValue));
-		}
+            VariableValueChanged?.Invoke(this, new ValueChangedEventArgs(PressureName, oldValue, newValue));
+        }
 
-		public void UpdateEmergencyStopValue(bool newValue)
-		{
-			var oldValue = EmergencyStop;
+        public void UpdateEmergencyStopValue(bool newValue)
+        {
+            var oldValue = EmergencyStop;
             EmergencyStop = newValue;
-			VariableValueChanged?.Invoke(this, new ValueChangedEventArgs(EmergencyStopName, oldValue, newValue));
-		}
-	}
-	#endregion
+            VariableValueChanged?.Invoke(this, new ValueChangedEventArgs(EmergencyStopName, oldValue, newValue));
+        }
+    }
+    #endregion
 }

@@ -96,4 +96,48 @@ public static class CommonConditions
         );
 
     #endregion Enum conditions
+
+    #region Delayed conditions
+
+    public static DelayedCondition<T> WithDelay<T>(ThresholdCondition condition, TimeSpan delay)
+        where T : IComparable<T> =>
+        new(condition, delay);
+
+    public static DelayedCondition<T> WithDelay<T>(PredicateCondition<T> condition, TimeSpan delay) =>
+        new(condition, delay);
+
+    public static DelayedCondition<T> WithDelay<T>(ValueChangeCondition<T> condition, TimeSpan delay) =>
+        new(condition, delay);
+
+    public static DelayedCondition<double> OnHighValueDelayed(double threshold, TimeSpan delay, string message) =>
+        WithDelay<double>(
+            new ThresholdCondition(AlarmType.Warning, AlarmDirection.UpperBound, threshold, message),
+            delay);
+
+    public static DelayedCondition<double> OnLowValueDelayed(double threshold, TimeSpan delay, string message) =>
+        WithDelay<double>(
+            new ThresholdCondition(AlarmType.Warning, AlarmDirection.LowerBound, threshold, message),
+            delay);
+
+    public static DelayedCondition<bool> OnTrueDelayed(TimeSpan delay, AlarmType alarmType, string message) =>
+        WithDelay(OnTrue(alarmType, message), delay);
+
+    public static DelayedCondition<bool> OnFalseDelayed(TimeSpan delay, AlarmType alarmType, string message) =>
+        WithDelay(OnTrue(alarmType, message), delay);
+
+    #endregion Delayed conditions
+
+    #region Hysteresis conditions
+
+    public static HysteresisThresholdCondition HysteresisThreshold(AlarmType alarmType, AlarmDirection direction,
+        double triggerThreshold, double clearThreshold, string message) =>
+        new(alarmType, direction, triggerThreshold, clearThreshold, message);
+
+    public static HysteresisThresholdCondition OnHighValueHysteresis(double triggerValue, double clearTemp, string message) =>
+        HysteresisThreshold(AlarmType.Warning, AlarmDirection.UpperBound, triggerValue, clearTemp, message);
+
+    public static HysteresisThresholdCondition OnLowValueHysteresis(double triggerValue, double clearTemp, string message) =>
+        HysteresisThreshold(AlarmType.Warning, AlarmDirection.LowerBound, triggerValue, clearTemp, message);
+
+    #endregion Hysteresis conditions
 }

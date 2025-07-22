@@ -9,7 +9,7 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageId>philipp2604.VariableValueMonitor</PackageId>
     <Title>VariableValueMonitor</Title>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <Authors>Philipp Siewert</Authors>
     <Product>$(PackageId)</Product>
     <Description>A flexible, type-safe C# library for monitoring variable values with configurable alarms, thresholds, and custom conditions.</Description>
