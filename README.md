@@ -2,11 +2,12 @@
 A flexible, modern .NET library for monitoring variable values and triggering alarms based on a rich set of configurable conditions. It's designed to be a lightweight, type-safe, and thread-safe core for any application that needs to react to state changes, such as in industrial automation, IoT, or system monitoring.
 
 [![.NET 8 (LTS) Build & Test](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-8-build-and-test.yml/badge.svg)](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-8-build-and-test.yml)
-[![.NET 9 (Latest) Build & Test](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml/badge.svg)](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml)
+[![.NET 9 (Latest) Build & Test](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml/badge.svg)](https://github.com/philipp2604/VariableValueMonitor/actions/workflows/dotnet-9-build-and-test.yml)  
 [![Language](https://img.shields.io/badge/language-C%23-blue.svg)](https://docs.microsoft.com/en-us/dotnet/csharp/)
-[![NuGet Version](https://img.shields.io/nuget/v/philipp2604.VariableValueMonitor.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/philipp2604.VariableValueMonitor)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/philipp2604/VariableValueMonitor)](https://github.com/philipp2604/VariableValueMonitor/issues)
+[![GitHub issues](https://img.shields.io/github/issues/philipp2604/VariableValueMonitor)](https://github.com/philipp2604/VariableValueMonitor/issues)  
+[![NuGet Version](https://img.shields.io/nuget/v/philipp2604.VariableValueMonitor.svg?style=flat-square&logo=nuget)](https://www.nuget.org/packages/philipp2604.VariableValueMonitor)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/philipp2604/VariableValueMonitor)
 
 ## ✨ Key Features
 
